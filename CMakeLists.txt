@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.18)
+project(fcks_sched)
+add_subdirectory(xgboost)
+add_executable(fcks_sched main.cpp)
+target_link_libraries(fcks_sched PRIVATE xgboost)
