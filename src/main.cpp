@@ -1,15 +1,22 @@
+#include "policy_manager.hpp"
+
+#include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <string>
+#include <thread>
 #include <vector>
 #include <xgboost/c_api.h>
 #include <zmqpp/zmqpp.hpp>
 #include <random>
-#include <algorithm>
+#include <filesystem>
 
 constexpr bst_ulong NUM_ACTIONS = 8;
 constexpr bst_ulong STATE_DIM = 4;
+constexpr auto TICK_INTERVAL = std::chrono::milliseconds(200);
 
 #define CHECK_XGB(call)                                                     \
     if ((call) != 0) {                                                      \
@@ -55,6 +62,23 @@ bool load_booster_from_buffer(const void* data, size_t len, BoosterHandle& out_b
 }
 
 int main() {
+
+    const auto sched_dir =
+        std::filesystem::read_symlink("/proc/self/exe").parent_path() / "schedulers";
+
+    const std::vector<std::string> scheduler_binaries = {
+        (sched_dir / "scx_bpfland").string(),
+        (sched_dir / "scx_lavd").string(),
+        (sched_dir / "scx_layered").string(),
+        (sched_dir / "scx_rusty").string(),
+        (sched_dir / "scx_p2dq").string(),
+        (sched_dir / "scx_flash").string(),
+        (sched_dir / "scx_eevdf").string(),
+        (sched_dir / "scx_pandemonium").string()
+    };
+
+    PolicyManager policy_manager(scheduler_binaries);
+
     zmqpp::context context;
     context.set(zmqpp::context_option::io_threads, 1);
 
@@ -80,7 +104,11 @@ int main() {
     constexpr char predict_config[] =
         R"({"type": 0, "training": false, "iteration_begin": 0, "iteration_end": 0, "strict_shape": false})";
 
+    auto next_tick = std::chrono::steady_clock::now();
+
     while (true) {
+        next_tick += TICK_INTERVAL;
+
         float current_state[STATE_DIM] = {0.1f, 0.2f, 0.3f, 0.4f};
 
         if (has_pending) {
@@ -107,11 +135,11 @@ int main() {
             out_len *= out_shape[i];
         }
 
-        float epsilon = 0.05f;
+        constexpr float epsilon = 0.05f;
         uint8_t action = select_action(out_result, out_len, epsilon, rng);
         XGDMatrixFree(dmat);
 
-        //apply policy change
+        policy_manager.request_policy(action);
 
         std::memcpy(pending_exp.state, current_state, sizeof(current_state));
         pending_exp.action = action;
@@ -131,5 +159,7 @@ int main() {
                 std::cout << "Swapped to updated model (" << incoming.size(0) << " bytes)" << std::endl;
             }
         }
+
+        std::this_thread::sleep_until(next_tick);
     }
 }

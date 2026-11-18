@@ -17,6 +17,7 @@ set(SCX_RUST_TARGETS
     scx_lavd
     scx_layered
     scx_rusty
+    scx_p2dq
     scx_flash
     scx_eevdf
     scx_pandemonium
@@ -61,6 +62,9 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 FetchContent_MakeAvailable(zmqpp)
 target_include_directories(zmqpp-static PUBLIC "${zmqpp_SOURCE_DIR}/src")
 
-add_executable(fcks_sched src/main.cpp)
+add_executable(fcks_sched
+    src/main.cpp
+    src/policy_manager.cpp
+)
 target_link_libraries(fcks_sched PRIVATE xgboost zmqpp-static)
 add_dependencies(fcks_sched build_scx_schedulers)
