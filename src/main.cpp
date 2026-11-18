@@ -6,6 +6,7 @@
 #include <xgboost/c_api.h>
 #include <zmqpp/zmqpp.hpp>
 #include <random>
+#include <algorithm>
 
 constexpr bst_ulong NUM_ACTIONS = 8;
 constexpr bst_ulong STATE_DIM = 4;
@@ -76,6 +77,9 @@ int main() {
     Experience pending_exp{};
     bool has_pending = false;
 
+    constexpr char predict_config[] =
+        R"({"type": 0, "training": false, "iteration_begin": 0, "iteration_end": 0, "strict_shape": false})";
+
     while (true) {
         float current_state[STATE_DIM] = {0.1f, 0.2f, 0.3f, 0.4f};
 
@@ -92,9 +96,16 @@ int main() {
         DMatrixHandle dmat = nullptr;
         CHECK_XGB(XGDMatrixCreateFromMat(current_state, 1, STATE_DIM, NAN, &dmat));
 
-        bst_ulong out_len = 0;
+        const bst_ulong* out_shape = nullptr;
+        bst_ulong out_dim = 0;
         const float* out_result = nullptr;
-        CHECK_XGB(XGBoosterPredict(booster, dmat, 0, 0, 0, &out_len, &out_result));
+        CHECK_XGB(XGBoosterPredictFromDMatrix(
+            booster, dmat, predict_config, &out_shape, &out_dim, &out_result));
+
+        bst_ulong out_len = (out_dim > 0) ? 1 : 0;
+        for (bst_ulong i = 0; i < out_dim; ++i) {
+            out_len *= out_shape[i];
+        }
 
         float epsilon = 0.05f;
         uint8_t action = select_action(out_result, out_len, epsilon, rng);
